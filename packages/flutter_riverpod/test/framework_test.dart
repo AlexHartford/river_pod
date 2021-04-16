@@ -4,6 +4,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 
 void main() {
+  testWidgets('context.read works with providers that returns null',
+      (tester) async {
+    final nullProvider = Provider((ref) => null);
+
+    await tester.pumpWidget(ProviderScope(child: Container()));
+
+    final context = tester.element(find.byType(Container));
+
+    expect(context.read(nullProvider), null);
+  });
+
   testWidgets('context.read can read ScopedProviders', (tester) async {
     final provider = ScopedProvider((watch) => 42);
 
@@ -314,7 +325,9 @@ void main() {
 
   testWidgets('ProviderScope debugFillProperties', (tester) async {
     final unnamed = Provider((_) => 0);
-    final named = StateNotifierProvider((_) => Counter(), name: 'counter');
+    final named = StateNotifierProvider<Counter, int>((_) {
+      return Counter();
+    }, name: 'counter');
     final scopeKey = GlobalKey();
 
     await tester.pumpWidget(
@@ -322,7 +335,7 @@ void main() {
         key: scopeKey,
         child: Consumer(builder: (c, watch, _) {
           final value = watch(unnamed);
-          final count = watch(named.state);
+          final count = watch(named);
           return Text(
             'value: $value count: $count',
             textDirection: TextDirection.ltr,
@@ -341,20 +354,22 @@ void main() {
         'overrides: [], '
         'state: ProviderScopeState#00000, '
         'Provider<int>#00000: 0, '
-        "counter: Instance of 'Counter', "
-        'counter.state: 0)',
+        'counter: 0, '
+        "counter.notifier: Instance of 'Counter')",
       ),
     );
   });
 
   testWidgets('UncontrolledProviderScope debugFillProperties', (tester) async {
     final unnamed = Provider((_) => 0);
-    final named = StateNotifierProvider((_) => Counter(), name: 'counter');
+    final named = StateNotifierProvider<Counter, int>((_) {
+      return Counter();
+    }, name: 'counter');
     final container = ProviderContainer();
     final scopeKey = GlobalKey();
 
     container.read(unnamed);
-    container.read(named.state);
+    container.read(named);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -370,20 +385,26 @@ void main() {
         equalsIgnoringHashCodes(
           'UncontrolledProviderScope-[GlobalKey#00000]('
           'Provider<int>#00000: 0, '
-          "counter: Instance of 'Counter', "
-          'counter.state: 0)',
+          'counter: 0, '
+          "counter.notifier: Instance of 'Counter')",
         ),
         equalsIgnoringHashCodes(
           'UncontrolledProviderScope-[GlobalKey#00000]('
-          "counter: Instance of 'Counter', "
+          'counter: 0, '
           'Provider<int>#00000: 0, '
-          'counter.state: 0)',
+          "counter.notifier: Instance of 'Counter')",
         ),
         equalsIgnoringHashCodes(
           'UncontrolledProviderScope-[GlobalKey#00000]('
-          'counter.state: 0, '
+          "counter.notifier: Instance of 'Counter', "
           'Provider<int>#00000: 0, '
           "counter: Instance of 'Counter')",
+        ),
+        equalsIgnoringHashCodes(
+          'UncontrolledProviderScope-[GlobalKey#00000]('
+          'counter: 0, '
+          "counter.notifier: Instance of 'Counter', "
+          'Provider<int>#00000: 0)',
         ),
       ]),
     );
@@ -471,6 +492,35 @@ void main() {
       ),
     );
   });
+
+  testWidgets(
+      'autoDispose initState+ProviderListener does not destroy the state',
+      (tester) async {
+    var disposeCount = 0;
+    final counterProvider = StateProvider.autoDispose((ref) {
+      ref.onDispose(() => disposeCount++);
+      return 0;
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: Demo(
+          initState: (context) {
+            context.read(counterProvider).addListener((state) {});
+          },
+          builder: (context) {
+            return ProviderListener(
+              onChange: (_, __) {},
+              provider: counterProvider,
+              child: Container(),
+            );
+          },
+        ),
+      ),
+    );
+
+    expect(disposeCount, 0);
+  });
 }
 
 class Counter extends StateNotifier<int> {
@@ -504,5 +554,34 @@ class _InitStateState extends State<InitState> {
   @override
   Widget build(BuildContext context) {
     return Container();
+  }
+}
+
+class Demo extends StatefulWidget {
+  const Demo({
+    Key? key,
+    required this.initState,
+    required this.builder,
+  }) : super(key: key);
+
+  // ignore: diagnostic_describe_all_properties
+  final void Function(BuildContext context) initState;
+  // ignore: diagnostic_describe_all_properties
+  final Widget Function(BuildContext context) builder;
+
+  @override
+  _DemoState createState() => _DemoState();
+}
+
+class _DemoState extends State<Demo> {
+  @override
+  void initState() {
+    super.initState();
+    widget.initState(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.builder(context);
   }
 }

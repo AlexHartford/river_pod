@@ -55,7 +55,7 @@ Long story short:
   class Example extends ConsumerWidget {
     @override
     Widget build(BuildContext context, ScopedReader watch) {
-      final count = watch(counterProvider.state);
+      final count = watch(counterProvider);
       return Text(count.toString());
     }
   }
